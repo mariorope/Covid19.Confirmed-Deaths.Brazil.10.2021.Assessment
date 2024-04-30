@@ -1,0 +1,615 @@
+---
+title: 'Exploratory analysis of Covid19 cases and deaths in Brazil'
+output: html_document
+date: '2021-10-23'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 2em 0 2em 0'>
+<h5>Introduction:</h5>
+
+This project conducts a thorough exploration and analysis of COVID-19 data related to cases and deaths across Brazil, covering the period from early 2020 to early 2022. The analysis solely utilizes R for data preprocessing, manipulation, and visualisation, aiming to identify key patterns and insights into the pandemic's impact across different Brazilian regions.
+
+<h5>Data Source:</h5>
+
+The dataset, sourced from an official Brazilian database, provides detailed records from epidemiological reports across the country.
+
+<h5>Data Preprocessing:</h5>
+
+The initial step involves cleaning and preparing the data for analysis using R, focusing on selecting necessary variables and correcting data discrepancies.
+
+<h5>Exploratory Data Analysis:</h5>
+
+Deep dive into the data using statistical techniques and visualisations to uncover temporal and regional trends in case and death rates.
+
+<h5>Key Findings:</h5>
+
+<ol>
+<li>The analysis reveals significant regional differences in the impact of COVID-19 and the effectiveness of response measures.</li>
+<li>Temporal trends indicate critical periods of infection spread and mortality rates.</li>
+</ol>
+
+<h5>Conclusion:</h5>
+
+The findings underscore the importance of tailored public health responses and provide valuable insights for policymakers and health professionals.
+
+<h5>Dictionary of Variables:</h5>
+
+<ul>
+  <li><span style='font-weight: bold'>city:</span> name of the municipality (can be blank when the record refers to the state, it can be filled in with Imported/Undefined as well).</li>
+  <li><span style='font-weight: bold'>city_ibge_code:</span> IBGE code for the location.</li>
+  <li><span style='font-weight: bold'>date:</span> data collection date in YYYY-MM-DD format.</li>
+  <li><span style='font-weight: bold'>epidemiological_week:</span> epidemiological week number in YYYYWW format.</li>
+  <li><span style='font-weight: bold'>estimated_population:</span> estimated population for this municipality/state in 2020, according to IBGE.</li>
+  <li><span style='font-weight: bold'>estimated_population_2019:</span> estimated population for this municipality/state in 2019, according to IBGE. ATTENTION: this column has outdated values, prefer to use the estimated_population column.</li>
+  <li><span style='font-weight: bold'>is_last:</span> pre-computed field that says whether this record is the newest for this location, can be True or False (if you filter by this field, use is_last=True or is_last=False, do not use the lowercase value).</li>
+  <li><span style='font-weight: bold'>is_repeated:</span> pre-computed field that says whether this record is the newest for this location, can be True or False (if you filter by this field, use is_last=True or is_last=False, do not use the lowercase value).</li>
+  <li><span style='font-weight: bold'>last_available_confirmed:</span> number of confirmed cases on the last available day equal to or before the date.</li>
+  <li><span style='font-weight: bold'>last_available_confirmed_per_100k_inhabitants:</span> number of confirmed cases per 100,000 inhabitants (based on estimated_population) from the last available day on or before the date.</li>
+  <li><span style='font-weight: bold'>last_available_date:</span> date to which the data refers.</li>
+  <li><span style='font-weight: bold'>last_available_death_rate:</span> mortality rate (deaths/confirmed) of the last available day equal to or before the date date.</li>
+  <li><span style='font-weight: bold'>last_available_deaths:</span> number of deaths from the last available day equal to or before the date.</li>
+  <li><span style='font-weight: bold'>order_for_place:</span> number that identifies the registration order for this location. The record referring to the first bulletin in which this location appears will be counted as 1 and the other bulletins will increase this value.</li>
+  <li><span style='font-weight: bold'>place_type:</span> type of location that this record describes, it can be city or state.</li>
+  <li><span style='font-weight: bold'>state:</span> acronym of the federative unit, example: SP.</li>
+  <li><span style='font-weight: bold'>new_confirmed:</span> number of new cases confirmed since the last day (note that if is_repeated is True, this value will always be 0 and that this value may be negative if the SES relocates cases from that municipality to another).</li>
+  <li><span style='font-weight: bold'>new_deaths:</span> number of new deaths since the last day (note that if is_repeated is True, this value will always be 0 and that this value may be negative if the SES relocates cases from that municipality to another).</li>
+</ul>
+
+<h4>Let's get started!</h4>
+</div>
+
+<div style='margin-top: 2em'></div>
+<div style='background: #89CFF0; padding: 0.5em 0.5em 1.2em 0.5em; text-align: center'><h3>Data Pre-Processing</h3></div>
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>Firstly, the libraries that were necessary for this project were loaded. Note that you might need to install the 'coronabr' package. Uncomment the first two lines to install 'remotes' and 'coronabr'.</div>
+
+```{r}
+#install.packages('remotes')
+#remotes::install_github('liibre/coronabr')
+
+library(coronabr)
+library(data.table)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(plotly)
+library(ggpubr)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>In this project, a dataset, from an official Brazilian source, was used to explore the Covid19 evolution for a period of 2 years. In this first part, the data was pre-processed and in the next section the data was further explored in order to find out insights.
+
+The dataset was loaded using the package 'coronabr'.The first rows of the data sre displayed below.</div>
+
+```{r}
+data <- get_corona_br(save = FALSE)
+head(data)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>As we can see above, there are a lot of variables for this dataset. As only a few of these variables were needed for this project, which included 'date', 'state', 'estimated_population', 'new_confirmed' and 'new_deaths', these were selected next. The variable 'city' was also included because according to the dictionary of variables, the NA values for this variable represents state data, and therefore, this variable helped to perform some filtering of the data. Later on, this variable was also removed.
+
+However, before selecting the variables of interest, a copy of the original dataset was created so that if it's necessary to recover any information from it later on, it's not needed to load the dataset again.</div>
+
+```{r }
+original_data <- copy(data)
+```
+
+```{r }
+data <- data %>%
+  select(date, city, state, estimated_population, new_confirmed, new_deaths)
+head(data)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'> As the focus of this study was to perform analysis of states and the entire country, only the data for states were kept. In order to do it, the NA values for the 'city' variable was filtered (these data refers to state as mentioned in the dictionary of variables). Following that, the variable 'city' was also removed.</div>
+
+```{r }
+data <- data[is.na(data$city),]
+data <- select(data, -city)
+head(data)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>With the data filtered and reorganised, the next step was to check the dimension of the data (number of registers and number of variables).</div>
+
+```{r }
+dim(data)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>The filtered dataset presented 20,119 registers and 5 variables, which included 'date', 'state', 'estimated_population', 'new_confirmed' and 'new_deaths'. Next, the data type of variables were also checked.</div>
+
+```{r }
+glimpse(data)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>The data type of the variables made sense and were loaded correctly by R. Next, the number of missing values (NA) was also checked.</div>
+
+```{r }
+lapply(data, function(x) { sum(is.na(x)) })
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>With no variable with missing values, the data was prepared for the exploratory analysis. But before that, in order to facilitate future analysis, a new variable was created to hold the month values separately. A variable for day was not created because in this study, the variables were only analysed for periods no shorter than months (with a few exceptions shown later). On the other hand, a variable for year was not created either because there is only the year 2021 presented data for the entire year.</div>
+
+```{r }
+data <- data %>%
+  mutate(month = month(date)) %>%
+  reframe(date, month, state, estimated_population, new_confirmed, new_deaths)
+```
+
+<div style='margin-top: 2em'></div>
+
+<div style='background: #89CFF0; padding: 0.5em 0.5em 1.2em 0.5em; text-align: center'><h3>Exploratory Analysis</h3></div>
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>First of all the maximum and minimum values for the variable 'date' were checked to see if there were 2 years of data for this study.</div>
+
+```{r }
+data %>%
+  select(date) %>%
+  summarise(
+    min_date = min(date),
+    max_date = max(date)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>In order to use the most up to date information, a period of 2 years ending on 27/03/2022 was filtered.</div>
+
+```{r }
+data <- data[data$date >= date(ymd('2020-03-28')),]
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>After this transformation, the data comprised information starting from 28/03/2020 to 27/03/2022. Next, the 'state' variable was investigated to check inconsistencies and to confirm that the number of states was 27 (in fact, 26 states and 1 federal district)</div>
+
+```{r }
+data %>%
+  select(state) %>%
+  unique()
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>The variable 'state' presented no problem and all the states were correctly included. So, next step was to check the 'estimated population'.</div>
+
+```{r }
+data %>%
+  select(state, estimated_population) %>%
+  unique()
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>These values were double-checked with the estimates presented in the IBGE website (Official Census Organisation), and were all correct. So, the next step was to investigate inconsistencies for the variables new_confirmed and new_deaths. Negative values do not make sense for this variable, as both the number of new confirmed cases and death should be 0 or a positive integer, but never negative.</div>
+
+```{r }
+data %>%
+  filter(new_confirmed<0) %>%
+  select(new_confirmed)
+
+data %>% 
+  filter(new_deaths<0) %>%
+  select(new_deaths)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'> As observed above, there were a few negative values for both variables. This problem was solved by replacing the negative values for positive with the same magnitude by assuming that the dash was mistakenly included. After that, these variables were re-checked for negative values.</div>
+
+```{r }
+for (i in 2:length(data$new_confirmed))
+  {
+    if (data$new_confirmed[i] < 0)
+      
+    {
+      data$new_confirmed[i] <- data$new_confirmed[i]*(-1)
+    }
+  
+    if (data$new_deaths[i] < 0)
+      
+    {
+      data$new_deaths[i] <- data$new_deaths[i]*(-1)
+    }
+  }
+
+data %>%
+  filter(new_confirmed<0) %>%
+  select(new_confirmed)
+
+data %>% 
+  filter(new_deaths<0) %>%
+  select(new_deaths)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>The problem was solved, so now we can start performing some analysis. Let's first have a glance at the global situation by looking at the numbers for the entire country. In the following step, the estimated population for the entire country, the total number of new confirmed and new deaths, the proportion of new confirmed and population, the proportion of new deaths and population and the rate of deaths over confirmed were calculated and saved in a new dataframe named 'data_country'.</div>
+
+```{r }
+data_country_all <- data %>%
+  summarise(period = '28/03/2020 to 27/03/2022',
+            country = 'Brazil',
+            estimated_population = sum(unique(estimated_population)),
+            new_confirmed = sum(new_confirmed),
+            new_deaths = sum(new_deaths)) %>%
+  mutate(prop_confirmed_population = new_confirmed/estimated_population,
+         prop_deaths_population = new_deaths/estimated_population,
+         deaths_confirmed_rate = new_deaths/new_confirmed)
+data_country_all
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>For the period from 28/03/2020 to 27/02/2022 there were observed 29,904,964 of new confirmed cases and 659,726 deaths due to Covid19 in Brazil. This resulted in an approximate proportion of 14.1% and 0.3% of the Brazilian population that suffered from a new confirmed case and death, respectively. The proportion of death and new confirmed cases was about 2.2%.
+
+Next the evolution of the Covid19 cases was evaluated. As the number of cases per day varies a lot, there would be a lot of noise in a graph created with this data directly. Therefore, the weekly sum of new confirmed cases and new deaths were added up to create a new dataframe named data_country_week that was used to support this analysis.</div>
+
+```{r }
+data_country_week <- data
+data_country_week$week <- floor_date(data$date, "week")
+
+data_country_week <- data_country_week %>%
+  group_by(week) %>%
+  summarise(estimated_population = sum(unique(estimated_population)),
+            new_confirmed = sum(new_confirmed),
+            new_deaths = sum(new_deaths)) %>%
+  mutate(prop_confirmed_population = new_confirmed/estimated_population,
+         prop_deaths_population = new_deaths/estimated_population,
+         deaths_confirmed_rate = new_deaths/new_confirmed) %>%
+ungroup()
+head(data_country_week)
+```
+
+
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>In the plot below you can see the evolution of the number of new confirmed cases and new deaths caused by the Covid19 in Brazil, considering the studied period of 2 years. It is important to mention that the multiplier for the number of new confirmed cases is 10,000 and for the number of new deaths is 1,000. Therefore, the number you read in the graph should be multiplied by one of these numbers depending on which variable you are looking at.</div>
+
+
+```{r fig.width=10, fig.height=5}
+
+colors <- c('Death' = 'red', 'Confirmed' = 'blue', 'Death/Confirmed Rate' = 'black')
+x_annotation <- date(ymd_hms('2020-01-01 23:12:13', tz = 'America/New_York'))
+
+ggplot(data=data_country_week) +
+  geom_line(mapping = aes(x=week, y=new_confirmed / 10000, color='Confirmed')) +
+  geom_line(mapping = aes(x=week, y=new_deaths / 1000, color='Death')) +
+  annotate(geom='label', x=x_annotation, y=114, label='BRASIL (total)
+  Period: 28/03/2020 to 27/03/2022
+  Confirmed Cases: 29,904,964
+  Deaths: 659,726', color='black', hjust = 0, fontface='bold', size=4) +
+  labs(x = 'Week', color = 'Legend') +
+  ggtitle('Evolution of Confirmed and Death Rates in Brazil') +
+  scale_y_continuous(
+    'Number of New Confirmed Cases (x 10,000)', 
+    sec.axis = sec_axis(~ . * 1, name = 'Number of New Deaths (x 1,000)')) +
+  scale_color_manual(values = colors) +
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size = 11,face = 'bold'),
+    axis.text = element_text(size = 10),
+    axis.title.y.right = element_text(color = 'red'),
+    axis.title.y.left = element_text(color = 'blue'),
+    axis.text.y.right = element_text(color = 'red'),
+    axis.text.y.left = element_text(color = 'blue'),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    legend.position = c(0.1, 0.6),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black', fill = '#F5F5F5'),
+    panel.border = element_rect(size = 1, fill = NA)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>As shown above, the peaks for the number of new confirmed cases occurred in summer and spring of 2021 and summer of 2022, which the latter (2022) reached a level of approximately 1,300,000 (130 x 10,000) new confirmed cases but lasted a shorter period compared to the peak of 2021. The number of new deaths reached its peak (about 20,000 new deaths) in spring of 2021, coinciding with the peak of new confirmed cases in 2021. Although the peak of new confirmed case in 2022 was more than the double of the previous peak (2021), the number of new deaths for the year 2022 was dramatically reduced when compared to the number of new deaths in the first peak.
+
+The following graph illustrates the Death/Confirmed Rate of Covid19 in Brazil for the period from 28/03/2020 to 27/03/2022.</div>
+
+```{r fig.width=10, fig.height=5}
+x_annotation <- date(ymd_hms('2021-10-01 23:12:13', tz = 'America/New_York'))
+
+ggplot(data=data_country_week) +
+  geom_line(mapping = aes(x=week, y=deaths_confirmed_rate * 100, color='Death/Confirmed Rate')) +
+  annotate(geom='label', x=x_annotation, y=6.85, label='BRASIL (total)
+Period: 03/2020 to 02/2022
+Death/Confirmed Rate: 2.2%', color='black', hjust = 0, fontface='bold', size=4) +
+  labs(x = 'Week', y='Death/Confirmed Rate (%)', color = 'Legend') +
+
+  ggtitle('Evlolution of Death/Confirmed Rate in Brazil') +
+  scale_color_manual(values = colors) +
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size=11,face='bold'),
+    axis.text = element_text(size=10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    legend.position = c(0.89, 0.688),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black'),
+    panel.border = element_rect(size = 1, fill = NA)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>This plot confirmed that there was a much lower rate of new deaths and new confirmed cases in the end of the assessed period. Moreover, this plot also showed that even though the peaks of new confirmed and death cases happened in 2021 and 2022, the higher death/confirmed rate was observed right in the beginning of the pandemic, when the death/confirmed rate nearly reached 8%. This probably happened because we were not very aware about the disease, and therefore, not well prepared to fight against it, but we improved a lot over time.
+
+Now, let's dive a little deeper looking at data aggregated by state. First, a new dataset data_state was created with the totals of new confirmed and deaths cases.</div>
+
+```{r }
+data_state <- data %>%
+  group_by(state) %>%
+  summarise(estimated_population = sum(unique(estimated_population)),
+            new_confirmed = sum(new_confirmed),
+            new_deaths = sum(new_deaths)) %>%
+  mutate(prop_confirmed_population = new_confirmed/estimated_population,
+         prop_deaths_population = new_deaths/estimated_population,
+         deaths_confirmed_rate = new_deaths/new_confirmed) %>%
+ungroup()
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>As there are a lot of states to compare, let's create a new variable with the regions, so that the 5 regions of Brazil can visualised and compared easier.</div>
+
+```{r }
+state <- c('AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO')
+region <- c('N','NE','N','N','NE','NE','CO','SE','CO','NE','CO','CO','SE','N','NE','S','NE','NE','SE','NE','S','N','N','S','SE','NE','N')
+region_state_list <- data.frame(region, state)
+counter = 1
+
+data_state$region = 0
+for (i in 1:length(data_state$state)){
+  for (j in 1:length(region_state_list$region)){
+    if (data_state$state[i] == region_state_list$state[j]){
+      data_state$region[i] = region_state_list$region[j]
+      counter <- counter + 1
+    }
+  }
+}
+
+data_state <- data_state %>%
+  reframe(region, state, estimated_population, new_confirmed, new_deaths, prop_confirmed_population, prop_deaths_population, deaths_confirmed_rate)
+head(data_state)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>Now, let's create a visualisation to better understand the data by state.</div>
+
+```{r fig.width=10, fig.height=5}
+gg <- ggplot(data_state) +
+  geom_point(aes(x=prop_confirmed_population * 100,
+                 y=prop_deaths_population * 100,
+                 color=region,
+                 size=deaths_confirmed_rate * 100,
+                 group=state)) +
+  theme_bw() +
+  xlab("New Confirmed Case Rate (%)") +
+  ylab("New Deaths Rate (%)") +
+  ggtitle("Proportion of New Confirmed Case and Deaths Rates per State") +
+  labs(color = 'Region') +
+  guides(size = FALSE) +
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size=11,face='bold'),
+    axis.text = element_text(size=10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black'),
+    panel.border = element_rect(size = 1, fill = NA))
+
+ggplotly(gg) %>%
+  highlight("plotly_hover")
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>The plot above shows bubbles that represent each state of Brazil coloured by its regions. The rate of new confirmed case is plotted on the x axis and the rate of new deaths on the y axis, while the size of the bubbles represents the death/confirmed rate.
+
+Overall, the regions with the highest new confirmed rate were the south (S) and central west (CO) whereas the highest new deaths rate was observed for south east (SE) and CO. The death/confirmed rate was also highest for SE. Overall, the NE presented the lowest new confirmed case rate and the lowest new deaths rate but, interestingly, the death/confirmed rate was mostly medium level, ranging from 1.64 to 2.56%.
+
+When looking at the states, it is clear that the two big pink bubbles on top of the plot ('São Paulo' - SP and 'Rio de Janeiro' RJ) where the ones which presented the highest death/confirmed rate (3.19% and 3.49%, respectively), while 'Santa Catarina' (SC) presented the lowest (1.29%). The states with the highest new deaths rate were RJ and 'Mato Grosso' (MT) with values above 0.4%. With respect to new confirmed cases rate, the highest values were observed for 'Espírito Santo' (ES) and 'Roraima' (RR) (above 25%), which both of them presented a relatively low death/confirmed rate (< 1.4%).
+
+Let's create a new dataset named data_state_week to further investigate the evolution of Covid19 per state, although I guess the plot will be very polluted as there were 27 states.</div>
+
+```{r }
+data_state_week <- data
+data_state_week$week <- floor_date(data$date, "week")
+
+data_state_week <- data_state_week %>%
+  group_by(state, week) %>%
+  summarise(estimated_population = sum(unique(estimated_population)),
+            new_confirmed = sum(new_confirmed),
+            new_deaths = sum(new_deaths)) %>%
+  mutate(prop_confirmed_population = new_confirmed/estimated_population,
+         prop_deaths_population = new_deaths/estimated_population,
+         deaths_confirmed_rate = new_deaths/new_confirmed) %>%
+ungroup()
+head(data_state_week)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'></div>
+
+```{r fig.width=10, fig.height=5}
+ggplot(data=data_state_week) +
+  geom_line(mapping = aes(x=week, y=new_confirmed, group=state ,color=state)) +
+  labs(x = 'Week', y='Number of New Confirmed Cases') +
+  ggtitle('Evlolution of New Confirmed Case per State') +
+
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size=11,face='bold'),
+    axis.text = element_text(size=10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black'),
+    panel.border = element_rect(size = 1, fill = NA)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>As predicted before, it is not possible to perform any analysis in this chart, it would be better to plot a few sates and check which one were more relevants to present. However, instead of that, let's create a new dataframe named data_region_week and see if we get a better visualisation to compare the regions.</div>
+
+```{r }
+data_region_week <- data
+
+counter = 1
+
+data_region_week$region = 0
+for (i in 1:length(data_region_week$state)){
+  for (j in 1:length(region_state_list$region)){
+    if (data_region_week$state[i] == region_state_list$state[j]){
+      data_region_week$region[i] = region_state_list$region[j]
+      counter <- counter + 1
+    }
+  }
+}
+
+data_region_week$week <- floor_date(data$date, "week")
+
+data_region_week <- data_region_week %>%
+  group_by(region, week) %>%
+  summarise(estimated_population = sum(unique(estimated_population)),
+            new_confirmed = sum(new_confirmed),
+            new_deaths = sum(new_deaths)) %>%
+  mutate(prop_confirmed_population = new_confirmed/estimated_population,
+         prop_deaths_population = new_deaths/estimated_population,
+         deaths_confirmed_rate = new_deaths/new_confirmed) %>%
+ungroup()
+
+data_region_week <- data_region_week %>%
+  reframe(week, region, estimated_population, new_confirmed, new_deaths, prop_confirmed_population, prop_deaths_population, deaths_confirmed_rate)
+
+head(data_region_week)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>Plotting the new confirmed cases rate per state per week.</div>
+
+```{r fig.width=10, fig.height=5}
+ggplot(data=data_region_week) +
+  geom_line(mapping = aes(x=week, y=prop_confirmed_population * 100, group=region ,color=region)) +
+  labs(x = 'Week', y='New Confirmed Cases Rate (%)') +
+  ggtitle('Evlolution of New Confirmed Case per Region') +
+
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size=11,face='bold'),
+    axis.text = element_text(size=10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black'),
+    panel.border = element_rect(size = 1, fill = NA)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>The plot has improved compared to the previous version, but it is still with a lot of noise, which dificultate its analysis. So, let's try to down one level and investigate the state data by month. Let's create a new dataframe named data_region_month and see if it was possible some insights from it.</div>
+
+```{r }
+data_region_month <- data
+
+counter = 1
+
+data_region_month$region = 0
+for (i in 1:length(data_region_month$state)){
+  for (j in 1:length(region_state_list$region)){
+    if (data_region_month$state[i] == region_state_list$state[j]){
+      data_region_month$region[i] = region_state_list$region[j]
+      counter <- counter + 1
+    }
+  }
+}
+
+data_region_month$month <- floor_date(data$date, "month")
+
+data_region_month <- data_region_month %>%
+  group_by(region, month) %>%
+  summarise(estimated_population = sum(unique(estimated_population)),
+            new_confirmed = sum(new_confirmed),
+            new_deaths = sum(new_deaths)) %>%
+  mutate(prop_confirmed_population = new_confirmed/estimated_population,
+         prop_deaths_population = new_deaths/estimated_population,
+         deaths_confirmed_rate = new_deaths/new_confirmed) %>%
+ungroup()
+
+data_region_month <- data_region_month %>%
+  reframe(month, region, estimated_population, new_confirmed, new_deaths, prop_confirmed_population, prop_deaths_population, deaths_confirmed_rate)
+
+head(data_region_month)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>Plotting the new confirmed cases rate per state per month.</div>
+
+```{r fig.width=10, fig.height=5}
+ggplot(data=data_region_month) +
+  geom_line(mapping = aes(x=month, y=prop_confirmed_population * 100, group=region ,color=region)) +
+  labs(x = 'Month', y='New Confirmed Cases Rate (%)') +
+  ggtitle('Evlolution of New Confirmed Case per Region per Month') +
+
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size=11,face='bold'),
+    axis.text = element_text(size=10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black'),
+    panel.border = element_rect(size = 1, fill = NA)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>Now, the plot is less polluted and we can visualise the curves for each state much better. It is also possible to confirm what was previously mentioned, as most of the time, the S presented the highest rate of new confirmed cases, followed by the CO, whereas the NE presented the lowest for most of the time. Moreover, the highest peak was observed for the region S (about 3%) and CO (about 2.1%) during the first months of 2022.
+
+In the following step, let's investigate the new deaths rate per region per month</div>
+
+```{r fig.width=10, fig.height=5}
+ggplot(data=data_region_month) +
+  geom_line(mapping = aes(x=month, y=prop_deaths_population * 100, group=region ,color=region)) +
+  labs(x = 'Month', y='New Deaths Rate (%)') +
+  ggtitle('Evlolution of New Deaths per Region per Month') +
+
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size=11,face='bold'),
+    axis.text = element_text(size=10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black'),
+    panel.border = element_rect(size = 1, fill = NA)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>For new deaths rate, it is interesting to note that a similar peak was reached in the beginning of the pandemic and in summer-spring time in the north (N) region. All the other regions followed a similar pattern. The NE regions presented again the lowest new deaths rate during the studied period, whereas S, CO and SP were the highest.
+
+In the next step, let's investigate the death/confirmed rate per region per month</div>
+
+```{r fig.width=10, fig.height=5}
+ggplot(data=data_region_month) +
+  geom_line(mapping = aes(x=month, y=deaths_confirmed_rate * 100, group=region ,color=region)) +
+  labs(x = 'Month', y='Death/Confirmed Rate (%)') +
+  ggtitle('Evlolution of Deaths/Confirmed Rate per Region per Month') +
+
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5, face = 'bold'),
+    axis.title = element_text(size=11,face='bold'),
+    axis.text = element_text(size=10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8, face = 'bold'),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(colour = 'black'),
+    panel.border = element_rect(size = 1, fill = NA)
+  )
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>In this last plot, it is clear that the SE presented the highest death/confirmed rate nearly for the entire period studied. It is also interesting to note that the regions S and CO had their highest peak for death/confirmed rate in summer-spring of 2021 and not at the beginning of the pandemic such as all other states as well as the Brazilian rate.
+
+Finally, as there were data for the entire year of 2021, the new deaths rate due to Covid19 was calculate to compare its severity with other common causes of death in Brazil.</div>
+
+```{r }
+data %>%
+  filter(date >= date(ymd('2021-01-01')), date <= date(ymd('2021-12-31'))) %>%
+  summarise(total_confirmed = sum(new_confirmed),
+            total_death = sum(new_deaths),
+            death_rate = sum(new_deaths) / sum(new_confirmed) * 100)
+```
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>As shown above, Brazil witnessed 14,649,109 new confirmed cases and 424,629 fatalities from Covid-19 in 2021, translating to a death rate of approximately 2.9%. The Brazilian Institute of Geography and Statistics (IBGE) reported that in 2021, Covid-19 was responsible for 26.6% of all deaths, making it the leading cause of death. Diseases related to the circulatory system followed with 20.6% of deaths, and tumors were the third most common cause, accounting for 12.8%. While Covid-19 had a significant impact, the mortality rates from several other global diseases were considerably higher. Furthermore, the United Nations has highlighted that diseases linked to inadequate drinking water, sanitation, and hygiene are leading to preventable fatalities; in 2019, diarrhea, primarily caused by these deficiencies, was responsible for over 69% of deaths globally.</div>
+
+<div style='background: #89CFF0; padding: 0.5em 0.5em 1.2em 0.5em; text-align: center'><h3>Key Findings</h3></div>
+
+<div style='background: rgba(198,230,251,0.3); padding: 1em 1em 1em 1em; margin: 1em 0 1em 0'>
+<ol>
+<li>Although the Covid19 was able to mutate and spread over quickly, the fatality rate was relatively low.</li>
+<li>The Brazilian peak of new confirmed cases of Covid19 was during spring to summer of 2021 whereas the peak of new death occurred during the beginning of the pandemic.</li>
+<li>Cases of Covid19 were more letal in the South East (SE) of Brazil, especially in the states of 'Rio de Janeiro' and 'São Paulo'.</li>
+</ol>
+</div>
